@@ -1,97 +1,193 @@
 # flake8: noqa: E501
-#
-# En este dataset se desea pronosticar el default (pago) del cliente el próximo
-# mes a partir de 23 variables explicativas.
-#
-#   LIMIT_BAL: Monto del credito otorgado. Incluye el credito individual y el
-#              credito familiar (suplementario).
-#         SEX: Genero (1=male; 2=female).
-#   EDUCATION: Educacion (0=N/A; 1=graduate school; 2=university; 3=high school; 4=others).
-#    MARRIAGE: Estado civil (0=N/A; 1=married; 2=single; 3=others).
-#         AGE: Edad (years).
-#       PAY_0: Historia de pagos pasados. Estado del pago en septiembre, 2005.
-#       PAY_2: Historia de pagos pasados. Estado del pago en agosto, 2005.
-#       PAY_3: Historia de pagos pasados. Estado del pago en julio, 2005.
-#       PAY_4: Historia de pagos pasados. Estado del pago en junio, 2005.
-#       PAY_5: Historia de pagos pasados. Estado del pago en mayo, 2005.
-#       PAY_6: Historia de pagos pasados. Estado del pago en abril, 2005.
-#   BILL_AMT1: Historia de pagos pasados. Monto a pagar en septiembre, 2005.
-#   BILL_AMT2: Historia de pagos pasados. Monto a pagar en agosto, 2005.
-#   BILL_AMT3: Historia de pagos pasados. Monto a pagar en julio, 2005.
-#   BILL_AMT4: Historia de pagos pasados. Monto a pagar en junio, 2005.
-#   BILL_AMT5: Historia de pagos pasados. Monto a pagar en mayo, 2005.
-#   BILL_AMT6: Historia de pagos pasados. Monto a pagar en abril, 2005.
-#    PAY_AMT1: Historia de pagos pasados. Monto pagado en septiembre, 2005.
-#    PAY_AMT2: Historia de pagos pasados. Monto pagado en agosto, 2005.
-#    PAY_AMT3: Historia de pagos pasados. Monto pagado en julio, 2005.
-#    PAY_AMT4: Historia de pagos pasados. Monto pagado en junio, 2005.
-#    PAY_AMT5: Historia de pagos pasados. Monto pagado en mayo, 2005.
-#    PAY_AMT6: Historia de pagos pasados. Monto pagado en abril, 2005.
-#
-# La variable "default payment next month" corresponde a la variable objetivo.
-#
-# El dataset ya se encuentra dividido en conjuntos de entrenamiento y prueba
-# en la carpeta "files/input/".
-#
-# Los pasos que debe seguir para la construcción de un modelo de
-# clasificación están descritos a continuación.
-#
-#
-# Paso 1.
-# Realice la limpieza de los datasets:
-# - Renombre la columna "default payment next month" a "default".
-# - Remueva la columna "ID".
-# - Elimine los registros con informacion no disponible.
-# - Para la columna EDUCATION, valores > 4 indican niveles superiores
-#   de educación, agrupe estos valores en la categoría "others".
-# - Renombre la columna "default payment next month" a "default"
-# - Remueva la columna "ID".
-#
-#
-# Paso 2.
-# Divida los datasets en x_train, y_train, x_test, y_test.
-#
-#
-# Paso 3.
-# Cree un pipeline para el modelo de clasificación. Este pipeline debe
-# contener las siguientes capas:
-# - Transforma las variables categoricas usando el método
-#   one-hot-encoding.
-# - Descompone la matriz de entrada usando PCA. El PCA usa todas las componentes.
-# - Estandariza la matriz de entrada.
-# - Selecciona las K columnas mas relevantes de la matrix de entrada.
-# - Ajusta una maquina de vectores de soporte (svm).
-#
-#
-# Paso 4.
-# Optimice los hiperparametros del pipeline usando validación cruzada.
-# Use 10 splits para la validación cruzada. Use la función de precision
-# balanceada para medir la precisión del modelo.
-#
-#
-# Paso 5.
-# Guarde el modelo (comprimido con gzip) como "files/models/model.pkl.gz".
-# Recuerde que es posible guardar el modelo comprimido usanzo la libreria gzip.
-#
-#
-# Paso 6.
-# Calcule las metricas de precision, precision balanceada, recall,
-# y f1-score para los conjuntos de entrenamiento y prueba.
-# Guardelas en el archivo files/output/metrics.json. Cada fila
-# del archivo es un diccionario con las metricas de un modelo.
-# Este diccionario tiene un campo para indicar si es el conjunto
-# de entrenamiento o prueba. Por ejemplo:
-#
-# {'dataset': 'train', 'precision': 0.8, 'balanced_accuracy': 0.7, 'recall': 0.9, 'f1_score': 0.85}
-# {'dataset': 'test', 'precision': 0.7, 'balanced_accuracy': 0.6, 'recall': 0.8, 'f1_score': 0.75}
-#
-#
-# Paso 7.
-# Calcule las matrices de confusion para los conjuntos de entrenamiento y
-# prueba. Guardelas en el archivo files/output/metrics.json. Cada fila
-# del archivo es un diccionario con las metricas de un modelo.
-# de entrenamiento o prueba. Por ejemplo:
-#
-# {'type': 'cm_matrix', 'dataset': 'train', 'true_0': {"predicted_0": 15562, "predicte_1": 666}, 'true_1': {"predicted_0": 3333, "predicted_1": 1444}}
-# {'type': 'cm_matrix', 'dataset': 'test', 'true_0': {"predicted_0": 15562, "predicte_1": 650}, 'true_1': {"predicted_0": 2490, "predicted_1": 1420}}
-#
+
+import pandas as pd
+import os
+import json
+import joblib
+import zipfile
+
+from sklearn.model_selection import GridSearchCV
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.decomposition import PCA
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.svm import SVC
+from sklearn.metrics import (
+    precision_score,
+    recall_score,
+    f1_score,
+    balanced_accuracy_score,
+    confusion_matrix,
+)
+
+def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Función para aplicar la limpieza de datos, replicando la lógica exitosa.
+    """
+    df_clean = df.copy()
+
+    # Renombrar columna objetivo
+    if "default payment next month" in df_clean.columns:
+        df_clean.rename(columns={"default payment next month": "default"}, inplace=True)
+
+    # Remover columna ID
+    if "ID" in df_clean.columns:
+        df_clean.drop(columns=["ID"], inplace=True)
+        
+    # Eliminar NaNs
+    df_clean.dropna(inplace=True)
+
+    # Eliminar registros con información no disponible en EDUCATION y MARRIAGE
+    df_clean = df_clean[(df_clean["EDUCATION"] != 0) & (df_clean["MARRIAGE"] != 0)]
+
+    # Agrupar categorías de EDUCATION > 4 en 4
+    df_clean.loc[df_clean["EDUCATION"] > 4, "EDUCATION"] = 4
+    
+    return df_clean
+
+
+def main():
+    """
+    Función principal que ejecuta todo el flujo de trabajo del modelo.
+    """
+    # --- Definir rutas y directorios 
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        script_dir = os.getcwd()
+        
+    project_root = os.path.dirname(script_dir) 
+    
+    input_dir = os.path.join(project_root, "files", "input")
+    model_dir = os.path.join(project_root, "files", "models")
+    output_dir = os.path.join(project_root, "files", "output")
+    
+    model_path = os.path.join(model_dir, "model.pkl.gz")
+    metrics_path = os.path.join(output_dir, "metrics.json")
+    
+    # Asegurarse de que los directorios de salida existan
+    os.makedirs(model_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # --- Paso 1: Cargar y limpiar los datasets desde los ZIP ---
+    print("Paso 1: Limpiando los datos...")
+    
+    train_zip_path = os.path.join(input_dir, 'train_data.csv.zip')
+    internal_train_filename = 'train_default_of_credit_card_clients.csv'
+    
+    with zipfile.ZipFile(train_zip_path, 'r') as z:
+        with z.open(internal_train_filename) as f:
+            df_train = pd.read_csv(f)
+
+    test_zip_path = os.path.join(input_dir, 'test_data.csv.zip')
+    internal_test_filename = 'test_default_of_credit_card_clients.csv'
+    
+    with zipfile.ZipFile(test_zip_path, 'r') as z:
+        with z.open(internal_test_filename) as f:
+            df_test = pd.read_csv(f)
+
+    df_train_clean = clean_data(df_train)
+    df_test_clean = clean_data(df_test)
+    print("Datos limpios.")
+
+    # --- Paso 2: Dividir los datasets en X e y ---
+    print("Paso 2: Dividiendo los datos en X e y...")
+    target_column = "default"
+    
+    x_train = df_train_clean.drop(columns=[target_column])
+    y_train = df_train_clean[target_column]
+    
+    x_test = df_test_clean.drop(columns=[target_column])
+    y_test = df_test_clean[target_column]
+    print("División completada.")
+
+    # --- Paso 3: Crear el pipeline 
+    print("Paso 3: Creando el pipeline...")
+    
+    categorical_features = ['SEX', 'EDUCATION', 'MARRIAGE']
+    numeric_features = [col for col in x_train.columns if col not in categorical_features]
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', StandardScaler(), numeric_features),
+            ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features)
+        ],
+        remainder='passthrough'
+    )
+    
+    pipeline = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('pca', PCA()),
+        ('feature_selection', SelectKBest(score_func=f_classif)),
+        ('svm', SVC(random_state=42))
+    ])
+    print("Pipeline creado.")
+    
+    # --- Paso 4: Optimizar hiperparámetros ---
+    print("Paso 4: Entrenando el modelo con GridSearchCV...")
+    
+    param_grid = {
+        'pca__n_components': [20, 25, 30],
+        'feature_selection__k': [10, 15, 20],
+        'svm__C': [1, 10],
+        'svm__gamma': ['scale', 'auto']
+    }
+
+    grid_search = GridSearchCV(
+        pipeline,
+        param_grid,
+        cv=5, # Usamos 5 splits para que sea más rápido
+        scoring='balanced_accuracy',
+        n_jobs=-1,
+        verbose=1
+    )
+    
+    grid_search.fit(x_train, y_train)
+    best_model = grid_search.best_estimator_
+    print(f"Mejores parámetros encontrados: {grid_search.best_params_}")
+
+    # --- Paso 5: Guardar el modelo ---
+    print("Paso 5: Guardando el mejor modelo...")
+    joblib.dump(best_model, model_path)
+    print(f"Modelo guardado en: {model_path}")
+
+    # --- Paso 6 y 7: Calcular y guardar métricas 
+    print("Paso 6 y 7: Calculando y guardando métricas...")
+    
+    all_metrics_to_save = []
+    
+    for dataset_name, X, y in [('train', x_train, y_train), ('test', x_test, y_test)]:
+        y_pred = best_model.predict(X)
+        
+        metrics_dict = {
+            'dataset': dataset_name,
+            'precision': precision_score(y, y_pred),
+            'balanced_accuracy': balanced_accuracy_score(y, y_pred),
+            'recall': recall_score(y, y_pred),
+            'f1_score': f1_score(y, y_pred)
+        }
+        all_metrics_to_save.append(metrics_dict)
+        
+        cm = confusion_matrix(y, y_pred)
+        tn, fp, fn, tp = cm.ravel()
+        
+        cm_dict = {
+            'type': 'cm_matrix',
+            'dataset': dataset_name,
+            'true_0': {"predicted_0": int(tn), "predicte_1": int(fp)}, 
+            'true_1': {"predicted_0": int(fn), "predicted_1": int(tp)}
+        }
+        all_metrics_to_save.append(cm_dict)
+
+    # Guardado en formato JSON Lines (un objeto JSON por línea)
+    with open(metrics_path, 'w') as f:
+        for item in all_metrics_to_save:
+            f.write(json.dumps(item) + '\n')
+            
+    print(f"Métricas guardadas en: {metrics_path}")
+    print("¡Proceso completado!")
+
+
+if __name__ == "__main__":
+    main()
